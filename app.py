@@ -1,7 +1,7 @@
 import plotly.express as px
 import seaborn as sns
 from shiny.express import input, ui
-from shiny import render  # Import render module
+from shiny import reactive, render  # Import render module
 from shinywidgets import render_plotly
 import palmerpenguins  # provides the Palmer Penguin dataset
 
@@ -9,6 +9,14 @@ import palmerpenguins  # provides the Palmer Penguin dataset
 penguins_df = palmerpenguins.load_penguins()
 
 ui.page_opts(title="Mrs. Doodles Penguins", fillable=True)
+
+# Define a dictionary mapping display names to original column names
+column_mapping = {
+    "Bill Length (mm)": "bill_length_mm",
+    "Bill Depth (mm)": "bill_depth_mm",
+    "Flipper Length (mm)": "flipper_length_mm",
+    "Body Mass (g)": "body_mass_g"
+}
 
 # Add a Shiny UI sidebar for user interaction
 with ui.sidebar(open="open"):
@@ -19,7 +27,7 @@ with ui.sidebar(open="open"):
 
     # Use ui.input_selectize() to create a dropdown input to choose a column
     ui.input_selectize("selected_attribute", "Selected Attribute",
-                       ["bill_length_mm", "bill_depth_mm", "flipper_length_mm", "body_mass_g"])
+                       list(column_mapping.keys()))
 
     # Use ui.input_numeric() to create a numeric input for the number of Plotly histogram bins
     ui.input_numeric("plotly_bin_count", "Plotly Bin Count", 40)
@@ -29,8 +37,12 @@ with ui.sidebar(open="open"):
 
     # Use ui.input_checkbox_group() to create a checkbox group input to filter the species
     ui.input_checkbox_group("selected_species_list", "Species",
-                            ["Adelie", "Gentoo", "Chinstrap"], selected=["Adelie","Gentoo", "Chinstrap"])
-
+                            ["Adelie", "Gentoo", "Chinstrap"], selected=["Adelie", "Gentoo", "Chinstrap"])
+    
+    #Use ui.input_checkbox_group() to create a checkbox group input to filter the islands
+    ui.input_checkbox_group("selected_island_list", "Island",
+                            ["Torgersen", "Biscoe", "Dream"], selected= ["Torgersen", "Biscoe", "Dream"])
+    
     # Use ui.input_checkbox() to create a checkbox to show the sex
     ui.input_checkbox("show_sex", "Show Sex")
 
@@ -38,7 +50,7 @@ with ui.sidebar(open="open"):
     ui.hr()
 
     # Use ui.a() to add a hyperlink to the sidebar
-    ui.a("GitHub", href="https://github.com/Ldooley32/cintel-02-data-doodles/tree/main", target="_blank")
+    ui.a("GitHub", href="https://github.com/Ldooley32/cintel03-reactive-doodles/blob/main/app.py", target="_blank")
 
 with ui.layout_columns():
     with ui.accordion(id="acc", open="open"):
@@ -52,6 +64,13 @@ with ui.layout_columns():
             def penguin_datagrid():
                 return render.DataGrid(penguins_df)
 
+@reactive.calc
+def filtered_data():
+    return penguins_df[
+        (penguins_df["species"].isin(input.selected_species_list())) &
+        (penguins_df["island"].isin(input.selected_island_list()))
+    ]
+
 with ui.navset_card_tab(id="tab"):
     with ui.nav_panel("Plotly Histogram"):
 
@@ -61,10 +80,7 @@ with ui.navset_card_tab(id="tab"):
             # Create a Plotly histogram with dynamic attributes and bin count based on user inputs
             selected_attribute = input.selected_attribute()
             plotly_bin_count = input.plotly_bin_count()
-            selected_species_list = input.selected_species_list()
             show_sex = input.show_sex()
-
-            filtered_df = penguins_df[penguins_df["species"].isin(selected_species_list)]
 
             if show_sex:
                 title = f"Plotly Histogram for {selected_attribute} (Sex Included)"
@@ -74,45 +90,42 @@ with ui.navset_card_tab(id="tab"):
                 xaxis_title = selected_attribute
 
             histogram = px.histogram(
-                filtered_df,
-                x=selected_attribute,
-                color="sex" if show_sex else None,
+                filtered_data(),
+                x=column_mapping[selected_attribute],
+                color="sex" if show_sex else "species",
                 title=title,
-                labels={selected_attribute: xaxis_title},
+                labels={column_mapping[selected_attribute]: xaxis_title},
                 nbins=plotly_bin_count,
             )
             return histogram
 
     with ui.nav_panel("Seaborn Histogram"):
-            # Create a function to render the Seaborn histogram
-            @render.plot
-            def seaborn_histogram():
-                    selected_attribute = input.selected_attribute()
-                    seaborn_bin_count = input.seaborn_bin_count()
-                    show_sex = input.show_sex()
-                    selected_species_list = input.selected_species_list()
+        # Create a function to render the Seaborn histogram
+        @render.plot
+        def seaborn_histogram():
+            selected_attribute = input.selected_attribute()
+            seaborn_bin_count = input.seaborn_bin_count()
+            show_sex = input.show_sex()
 
-                    filtered_df = penguins_df[penguins_df["species"].isin(selected_species_list)]
+            title = f"Seaborn Histogram for {selected_attribute}"
+            if show_sex:
+                title += " (Sex Included)"
 
-                    title = f"Seaborn Histogram for {selected_attribute}"
-                    if show_sex:
-                        title += " (Sex Included)"
+            sns.set(style="whitegrid")  # Set Seaborn style
+            seaborn_histogram = sns.histplot(
+                filtered_data(),
+                x=column_mapping[selected_attribute],
+                hue="sex" if show_sex else "species",
+                bins=seaborn_bin_count,
+            )
+            # Update titles and labels
+            seaborn_histogram.set_title(title)
 
-                    sns.set(style="whitegrid")  # Set Seaborn style
-                    seaborn_histogram = sns.histplot(
-                        filtered_df,
-                        x=selected_attribute,
-                        hue="sex" if show_sex else None,
-                        bins=seaborn_bin_count,
-                    )
-                     # Update titles and labels
-                    seaborn_histogram.set_title(title)
-                    
-                    return seaborn_histogram
-                
+            return seaborn_histogram
+
     with ui.nav_panel("Scatterplot"):
         ui.card_header("Plotly Scatterplot: Species")
-                 
+
         @render_plotly
         def ploty_scatterplot():
             selected_species_list = input.selected_species_list()
